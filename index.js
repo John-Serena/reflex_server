@@ -1,26 +1,20 @@
+require("dotenv").config();
+
 const express = require("express");
 const app = express();
 const http = require('http');
 const server = http.createServer(app);
+
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000"
+    origin: process.env.FRONTEND_HOST
   }
 });
 
-// Use .env [e.g. process.env.NOTION_TOKEN]
-require("dotenv").config();
-
 // Establish headers
 app.use((req, res, next) => {
-  const allowedOrigins = ["http://localhost:3000", "https://cardano-alpha.vercel.app"];
-  const origin = req.headers.origin;
-  // console.log(origin);
-  if (allowedOrigins.includes(origin)) {
-       res.append('Access-Control-Allow-Origin', origin);
-  }
-
+  res.append('Access-Control-Allow-Origin', process.env.FRONTEND_HOST);
   res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
   res.append('Access-Control-Allow-Headers', 'Content-Type');
   next();
