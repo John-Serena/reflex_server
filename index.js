@@ -31,21 +31,44 @@ io.on('connection', socket => {
   
   socket.on('disconnect', reason => {
     console.log('user disconnected');
+    //purge map of IDs
   });
 
-  socket.on('room', data => {
+  socket.on('create room', data => {
+    //name, code
+    //construct map of ID to name
     console.log('room join');
     console.log(data);
     socket.join(data.room);
+    
+    //emit room state
+
+    //State = [
+    //   ABC: {'name':'Person', 'sock': 123, 'answer': 'turnips', 'submitted': False},
+    //   ABD:
+    //]
+  });
+
+  socket.on('join room', data => {
+    //name, room
+    console.log('room join');
+    console.log(data);
+    socket.join(data.room);
+
+    //emit room state map to occupants
   });
 
   socket.on('leave room', data => {
     console.log('leaving room');
     console.log(data);
     socket.leave(data.room)
+
+    //emit room state
   });
 
-  socket.on('new message', data => {
+  socket.on('submit', data => {
+    //submitted
+
     console.log(data.room);
     socket.broadcast
     .to(data.room)
