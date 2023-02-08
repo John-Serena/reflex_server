@@ -4,6 +4,9 @@ const express = require("express");
 const app = express();
 const http = require('http');
 const server = http.createServer(app);
+const state = {};
+
+// Helper functions
 
 const { Server } = require("socket.io");
 const io = new Server(server, {
@@ -21,32 +24,43 @@ app.use((req, res, next) => {
 });
 
 // Establish requests
-app.get("/", (req, res) => {
-  res.send('<h1>Hello world</h1>');
+app.get("/", (_, res) => {
+  res.send('<h4>Hi!</h4><p>You\'ve reached the socket server for Reflex. To access the summary navigate to <b>/summary/{secret}</b> where {secret} is the unique token for the page.</p>');
+});
+
+
+app.get("/summary/" + process.env.SECRET, (_, res) => {
+  res.send(state);
 });
 
 // Configure socket
 io.on('connection', socket => {
-  console.log('a user connected');
+  console.log('[NEW CONNECTION]');
   
-  socket.on('disconnect', reason => {
+  socket.on('disconnect', _ => {
     console.log('user disconnected');
     //purge map of IDs
   });
 
-  socket.on('create room', data => {
-    //name, code
-    //construct map of ID to name
-    console.log('room join');
-    console.log(data);
-    socket.join(data.room);
-    
-    //emit room state
+  socket.on('create party', _ => {
+    console.log('[CREATE PARTY]');
+    code = "PARTYA";
+    word = "poodles";
 
-    //State = [
-    //   ABC: {'name':'Person', 'sock': 123, 'answer': 'turnips', 'submitted': False},
-    //   ABD:
-    //]
+    party = {
+      "code": code,
+      "currentWord": word,
+      "currentRound": 1,
+      "dateCreated": Date().toString(),
+      "players": {},
+      "settings": {
+          "numRounds": 3,
+          "timer": -1
+      }
+    };
+
+    state[code] = party;
+    socket.emit("room state", party);
   });
 
   socket.on('join room', data => {
