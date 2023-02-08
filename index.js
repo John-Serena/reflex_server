@@ -5,8 +5,40 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const state = {};
+const words = ["poodles", "giraffe", "turtles", "trex"];
 
 // Helper functions
+function GeneratePartyCode(){
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const c1 = alphabet[Math.floor(Math.random() * alphabet.length)];
+  const c2 = alphabet[Math.floor(Math.random() * alphabet.length)];
+  const c3 = alphabet[Math.floor(Math.random() * alphabet.length)];
+
+  const n1 = Math.floor(Math.random() * 10);
+  const n2 = Math.floor(Math.random() * 10);
+  const n3 = Math.floor(Math.random() * 10);
+  return "" + c1 + c2 + c3 + n1 + n2 + n3;
+}
+
+function GenerateUniquePartyCode(){
+  code = GeneratePartyCode();
+
+  while (Object.keys(state).includes(code)){
+    code = GeneratePartyCode();
+  }
+
+  return code;
+}
+
+function GetWord(previousWords){
+  word = words[Math.floor(Math.random() * words.length)];
+
+  while (previousWords.includes(word)){
+    word = words[Math.floor(Math.random() * words.length)];
+  }
+
+  return word.toUpperCase();
+}
 
 const { Server } = require("socket.io");
 const io = new Server(server, {
@@ -44,14 +76,16 @@ io.on('connection', socket => {
 
   socket.on('create party', _ => {
     console.log('[CREATE PARTY]');
-    code = "PARTYA";
-    word = "poodles";
+    code = GenerateUniquePartyCode();
+    prevWords = [];
+    word = GetWord(prevWords);
 
     party = {
       "code": code,
       "currentWord": word,
       "currentRound": 1,
       "dateCreated": Date().toString(),
+      "previousWords": prevWords,
       "players": {},
       "settings": {
           "numRounds": 3,
