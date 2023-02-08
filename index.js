@@ -31,13 +31,13 @@ function GenerateUniquePartyCode(){
 }
 
 function GetWord(previousWords){
-  word = words[Math.floor(Math.random() * words.length)];
+  word = words[Math.floor(Math.random() * words.length)].toUpperCase();
 
   while (previousWords.includes(word)){
-    word = words[Math.floor(Math.random() * words.length)];
+    word = words[Math.floor(Math.random() * words.length)].toUpperCase();
   }
 
-  return word.toUpperCase();
+  return word;
 }
 
 const { Server } = require("socket.io");
@@ -66,9 +66,7 @@ app.get("/summary/" + process.env.SECRET, (_, res) => {
 });
 
 // Configure socket
-io.on('connection', socket => {
-  console.log('[NEW CONNECTION]');
-  
+io.on('connection', socket => {  
   socket.on('disconnect', _ => {
     console.log('[USER DISCONNECT]');
     //purge map of IDs
@@ -76,11 +74,11 @@ io.on('connection', socket => {
 
   socket.on('create party', _ => {
     code = GenerateUniquePartyCode();
-    console.log('[CREATE PARTY ' + code + ']');
+    console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY]');
     prevWords = [];
     word = GetWord(prevWords);
-    console.log('[ASSIGNING WORD: ' + word + ']');
-    
+    console.log('[' + code + '] [' + socket.id + '] [ASSIGNING WORD: ' + word + ']');
+
     party = {
       "code": code,
       "currentWord": word,
@@ -99,15 +97,15 @@ io.on('connection', socket => {
   });
 
   socket.on('validate party', data => {
-    var isValid = Object.keys(state).includes(data.code);
-    console.log('[VALIDATE PARTY ' + data.code + ': ' + (isValid ? "TRUE" : "FALSE") +']');
+    var isValid = Object.keys(state).includes(data.code.toUpperCase());
+    console.log('[' + data.code + '] [' + socket.id + '] [VALIDATE PARTY: ' + (isValid ? "TRUE" : "FALSE") +']');
     
     socket.emit("party valid", isValid);
   });
 
   socket.on('join party', data => {
-    console.log('[JOIN PARTY ' + data.code + ' AS ' + (data.isHost ? 'HOST' : 'PARTICIPANT') + ' WITH NAME ' + data.name + ']');
-    var code = data.code;
+    var code = data.code.toUpperCase();
+    console.log('[' + code + '] [' + socket.id + '] [JOIN PARTY AS ' + (data.isHost ? 'HOST' : 'PARTICIPANT') + ' WITH NAME \'' + data.name + '\']');
 
     if (!Object.keys(state[code]["players"]).includes(socket.id)){
       player = {
@@ -119,27 +117,69 @@ io.on('connection', socket => {
       };
 
       state[code]["players"][socket.id] = player;
+    } else {
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] SOCKET ID ALREADY EXISTS IN PARTY]');
+      return;
     }
     
     socket.join(code);
     socket.emit("party state", state[code]);
   });
 
-  socket.on('leave room', data => {
-    console.log('leaving room');
-    console.log(data);
-    socket.leave(data.room)
+  socket.on('submit word', data => {
+    var code = data.code;
+    var submittedWord = data.word.toUpperCase();
+    console.log('[' + code + '] [' + socket.id + '] [SUBMIT WORD \'' + submittedWord + '\']');
+    
+    if (Object.keys(state[code]["players"]).includes(socket.id)){
+      state[code]["players"][socket.id]["answer"] = submittedWord;
+    } else {
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] SOCKET ID DOES NOT EXIST IN PARTY FOR SUBMISSION]');
+      return;
+    }
 
-    //emit room state
-  });
+    var allAnswered = true;
+    Object.keys(state[code]["players"]).forEach(id => {
+      if (state[code]["players"][id]["answer"] == null){
+        allAnswered = false;
+      }
+    });
 
-  socket.on('submit', data => {
-    //submitted
+    if (allAnswered){
+      state[code]["currentRound"] = state[code]["currentRound"] >= state[code]["settings"]["numRounds"] ? -1 : state[code]["currentRound"] + 1;
 
-    console.log(data.room);
+      var answerMap = {};
+
+      Object.keys(state[code]["players"]).forEach(id => {
+        if (Object.keys(answerMap).includes(state[code]["players"][id]["answer"])){
+          answerMap[state[code]["players"][id]["answer"]].push(id);
+        } else {
+          answerMap[state[code]["players"][id]["answer"]] = [id];
+        }
+
+        state[code]["players"][id]["answer"] = null;
+      });
+
+      Object.keys(answerMap).forEach(answer => {
+        if (answerMap[answer].length >= 2){
+          answerMap[answer].forEach(id => {
+            state[code]["players"][id]["points"] += 10;
+            //TODO: sort out points logic
+          })
+        }
+      })
+
+      if (state[code]["currentRound"] != -1){
+        state[code]["previousWords"].push(state[code]["currentWord"]);
+        var word = GetWord(state[code]["previousWords"]);
+        console.log('[' + code + '] [' + socket.id + '] [ASSIGNING WORD: ' + word + ']');
+        state[code]["currentWord"] = word;
+      }
+    }
+
     socket.broadcast
-    .to(data.room)
-    .emit('receive message', data)
+    .to(code)
+    .emit("party state", state[code])
   });
 });
 

@@ -39,16 +39,16 @@
 - Response (party)
 
 **4.0 Submit word**
-- Request (socketId, code, word)
+- Request (code, word)
 - Check if all answered, if so incremenet round number (or set to -1), update points, and regenerate word if applicable
 - Response (party)
 
 **6.0 Transfer Hosts**
-- Request (socketId, targetSocketId, code)
+- Request (targetSocketId, code)
 - Response (party)
 
 **7.0 Leave Game**
-- Request (socketId, code)
+- Request (code)
 - Response (party)
 
 **8.0 Delete Game**
