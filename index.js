@@ -70,16 +70,17 @@ io.on('connection', socket => {
   console.log('[NEW CONNECTION]');
   
   socket.on('disconnect', _ => {
-    console.log('user disconnected');
+    console.log('[USER DISCONNECT]');
     //purge map of IDs
   });
 
   socket.on('create party', _ => {
-    console.log('[CREATE PARTY]');
     code = GenerateUniquePartyCode();
+    console.log('[CREATE PARTY ' + code + ']');
     prevWords = [];
     word = GetWord(prevWords);
-
+    console.log('[ASSIGNING WORD: ' + word + ']');
+    
     party = {
       "code": code,
       "currentWord": word,
@@ -94,16 +95,34 @@ io.on('connection', socket => {
     };
 
     state[code] = party;
-    socket.emit("room state", party);
+    socket.emit("party state", party);
   });
 
-  socket.on('join room', data => {
-    //name, room
-    console.log('room join');
-    console.log(data);
-    socket.join(data.room);
+  socket.on('validate party', data => {
+    var isValid = Object.keys(state).includes(data.code);
+    console.log('[VALIDATE PARTY ' + data.code + ': ' + (isValid ? "TRUE" : "FALSE") +']');
+    
+    socket.emit("party valid", isValid);
+  });
 
-    //emit room state map to occupants
+  socket.on('join party', data => {
+    console.log('[JOIN PARTY ' + data.code + ' AS ' + (data.isHost ? 'HOST' : 'PARTICIPANT') + ' WITH NAME ' + data.name + ']');
+    var code = data.code;
+
+    if (!Object.keys(state[code]["players"]).includes(socket.id)){
+      player = {
+        "socketId": socket.id,
+        "name": data.name,
+        "answer": null,
+        "isHost": data.isHost,
+        "points": 0,
+      };
+
+      state[code]["players"][socket.id] = player;
+    }
+    
+    socket.join(code);
+    socket.emit("party state", state[code]);
   });
 
   socket.on('leave room', data => {
