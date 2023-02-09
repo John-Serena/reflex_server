@@ -72,7 +72,7 @@ io.on('connection', socket => {
     //purge map of IDs
   });
 
-  socket.on('create party', _ => {
+  socket.on('create party',(_, cb)  => {
     code = GenerateUniquePartyCode();
     console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY]');
     prevWords = [];
@@ -93,14 +93,14 @@ io.on('connection', socket => {
     };
 
     state[code] = party;
-    socket.emit("party state", party);
+    cb(party);
   });
 
-  socket.on('validate party', data => {
+  socket.on('validate party', (data, cb) => {
     var isValid = Object.keys(state).includes(data.code.toUpperCase());
     console.log('[' + data.code + '] [' + socket.id + '] [VALIDATE PARTY: ' + (isValid ? "TRUE" : "FALSE") +']');
     
-    socket.emit("party valid", isValid);
+    cb(isValid);
   });
 
   socket.on('join party', data => {
@@ -123,8 +123,17 @@ io.on('connection', socket => {
     }
     
     socket.join(code);
-    socket.emit("party state", state[code]);
+    socket.emit("joined party", state[code]);
   });
+
+  socket.on('change party state', data => {
+    var code = data.code.toUpperCase();
+
+    console.log('[' + code + '] [' + socket.id + '] [CHARGE PARTY STATE]');
+    socket.broadcast
+      .to(code)
+      .emit("game update", state[code]);
+  })
 
   socket.on('submit word', data => {
     var code = data.code;
@@ -175,11 +184,15 @@ io.on('connection', socket => {
         console.log('[' + code + '] [' + socket.id + '] [ASSIGNING WORD: ' + word + ']');
         state[code]["currentWord"] = word;
       }
+
+      socket.broadcast
+      .to(code)
+      .emit("change screen", true);
     }
 
     socket.broadcast
     .to(code)
-    .emit("party state", state[code])
+    .emit("word submitted", state[code]);
   });
 });
 
