@@ -6,6 +6,7 @@ const http = require('http');
 const server = http.createServer(app);
 const state = {};
 const words = ["poodles", "giraffe", "turtles", "trex"];
+let pendingCodes = [];
 
 // Helper functions
 function GeneratePartyCode(){
@@ -23,7 +24,7 @@ function GeneratePartyCode(){
 function GenerateUniquePartyCode(){
   code = GeneratePartyCode();
 
-  while (Object.keys(state).includes(code)){
+  while (Object.keys(state).includes(code) || pendingCodes.includes(code)){
     code = GeneratePartyCode();
   }
 
@@ -72,12 +73,38 @@ io.on('connection', socket => {
     //purge map of IDs
   });
 
-  socket.on('create party',(_, cb)  => {
+  socket.on('generate party code',(_, cb)  => {
     code = GenerateUniquePartyCode();
-    console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY]');
+    console.log('[' + code + '] [' + socket.id + '] [GENERATE PARTY CODE]');
+    pendingCodes.push(code);
+    cb(code);
+  });
+
+  socket.on('create party', (data, cb) => {
+    var code = data.code.toUpperCase();
+
+    if (!pendingCodes.includes(code)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] ATTEMPTING TO CREATE PARTY FROM NON-PENDING CODE]');
+      return;
+    }
+
+    const ind = pendingCodes.indexOf(code);
+    if (ind > -1) {
+      pendingCodes.splice(ind, 1);
+    }
+
     prevWords = [];
     word = GetWord(prevWords);
+    console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY AS HOST WITH NAME \'' + data.name + '\']');
     console.log('[' + code + '] [' + socket.id + '] [ASSIGNING WORD: ' + word + ']');
+
+    let host =  {
+      "socketId": socket.id,
+      "name": data.name,
+      "answer": null,
+      "isHost": true,
+      "points": 0,
+    };
 
     party = {
       "code": code,
@@ -92,9 +119,11 @@ io.on('connection', socket => {
       }
     };
 
+    party["players"][socket.id] = host;
     state[code] = party;
+    socket.join(code);
     cb(party);
-  });
+  })
 
   socket.on('validate party', (data, cb) => {
     var isValid = Object.keys(state).includes(data.code.toUpperCase());
@@ -105,14 +134,14 @@ io.on('connection', socket => {
 
   socket.on('join party', data => {
     var code = data.code.toUpperCase();
-    console.log('[' + code + '] [' + socket.id + '] [JOIN PARTY AS ' + (data.isHost ? 'HOST' : 'PARTICIPANT') + ' WITH NAME \'' + data.name + '\']');
+    console.log('[' + code + '] [' + socket.id + '] [JOIN PARTY AS PARTICIPANT WITH NAME \'' + data.name + '\']');
 
     if (!Object.keys(state[code]["players"]).includes(socket.id)){
       player = {
         "socketId": socket.id,
         "name": data.name,
         "answer": null,
-        "isHost": data.isHost,
+        "isHost": false,
         "points": 0,
       };
 
@@ -123,11 +152,24 @@ io.on('connection', socket => {
     }
     
     socket.join(code);
-    socket.emit("joined party", state[code]);
+    socket.broadcast
+      .to(code)
+      .emit("joined party", state[code]);
   });
 
   socket.on('change party state', data => {
+    //moving the game forward as host
     var code = data.code.toUpperCase();
+
+    if (!Object.keys(state[code]["players"]).includes(socket.id)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] NON PPLAYER CANNOT PROGRESS PARTY STATE]');
+      return;
+    }
+
+    if (!state[code]["players"][socket.id].isHost){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] NON HOST CANNOT PROGRESS PARTY STATE]');
+      return;
+    }
 
     console.log('[' + code + '] [' + socket.id + '] [CHARGE PARTY STATE]');
     socket.broadcast
@@ -185,6 +227,7 @@ io.on('connection', socket => {
         state[code]["currentWord"] = word;
       }
 
+      //signal to change to next screen automatically
       socket.broadcast
       .to(code)
       .emit("change screen", true);
