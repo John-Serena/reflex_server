@@ -126,8 +126,9 @@ io.on('connection', socket => {
   })
 
   socket.on('validate party', (data, cb) => {
-    var isValid = Object.keys(state).includes(data.code.toUpperCase());
-    console.log('[' + data.code + '] [' + socket.id + '] [VALIDATE PARTY: ' + (isValid ? "TRUE" : "FALSE") +']');
+    var code = data.code.toUpperCase();
+    var isValid = Object.keys(state).includes(code);
+    console.log('[' + code + '] [' + socket.id + '] [VALIDATE PARTY: ' + (isValid ? "TRUE" : "FALSE") +']');
     
     cb(isValid);
   });
@@ -135,6 +136,11 @@ io.on('connection', socket => {
   socket.on('join party', data => {
     var code = data.code.toUpperCase();
     console.log('[' + code + '] [' + socket.id + '] [JOIN PARTY AS PARTICIPANT WITH NAME \'' + data.name + '\']');
+
+    if (!Object.keys(state).includes(code)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] TRYING TO JOIN A NON-EXISTENT PARTY]');
+      return;
+    }
 
     if (!Object.keys(state[code]["players"]).includes(socket.id)){
       player = {
