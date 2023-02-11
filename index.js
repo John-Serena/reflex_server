@@ -6,7 +6,6 @@ const http = require('http');
 const server = http.createServer(app);
 const state = {};
 const words = ["poodles", "giraffe", "turtles", "trex"];
-let pendingCodes = [];
 
 // Helper functions
 function GeneratePartyCode(){
@@ -24,7 +23,7 @@ function GeneratePartyCode(){
 function GenerateUniquePartyCode(){
   code = GeneratePartyCode();
 
-  while (Object.keys(state).includes(code) || pendingCodes.includes(code)){
+  while (Object.keys(state).includes(code)){
     code = GeneratePartyCode();
   }
 
@@ -49,7 +48,7 @@ const io = new Server(server, {
 });
 
 // Establish headers
-app.use((req, res, next) => {
+app.use((_, res, next) => {
   res.append('Access-Control-Allow-Origin', process.env.FRONTEND_HOST);
   res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
   res.append('Access-Control-Allow-Headers', 'Content-Type');
@@ -73,34 +72,17 @@ io.on('connection', socket => {
     //purge map of IDs
   });
 
-  socket.on('generate party code',(_, cb)  => {
+  socket.on('create party', (data, cb) => {
     code = GenerateUniquePartyCode();
     console.log('[' + code + '] [' + socket.id + '] [GENERATE PARTY CODE]');
-    pendingCodes.push(code);
-    cb(code);
-  });
-
-  socket.on('create party', (data, cb) => {
-    var code = data.code.toUpperCase();
-
-    if (!pendingCodes.includes(code)){
-      console.log('[' + code + '] [' + socket.id + '] [ERROR] ATTEMPTING TO CREATE PARTY FROM NON-PENDING CODE]');
-      return;
-    }
-
-    const ind = pendingCodes.indexOf(code);
-    if (ind > -1) {
-      pendingCodes.splice(ind, 1);
-    }
-
     prevWords = [];
     word = GetWord(prevWords);
-    console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY AS HOST WITH NAME \'' + data.name + '\']');
+    console.log('[' + code + '] [' + socket.id + '] [CREATE PARTY AS HOST]');
     console.log('[' + code + '] [' + socket.id + '] [ASSIGNING WORD: ' + word + ']');
 
     let host =  {
       "socketId": socket.id,
-      "name": data.name,
+      "name": "TO BE SET",
       "answer": null,
       "isHost": true,
       "points": 0,
@@ -132,6 +114,24 @@ io.on('connection', socket => {
     
     cb(isValid);
   });
+
+  socket.on('change name', data => {
+    var code = data.code.toUpperCase();
+
+    if (!Object.keys(state).includes(code)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] TRYING TO ALTER NAME IN A NON-EXISTENT PARTY]');
+      return;
+    }
+
+    if (!Object.keys(state[code]["players"]).includes(socket.id)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] TRYING TO ALTER NAME WHEN NOT IN PARTY]');
+      return;
+    }
+
+    console.log('[' + code + '] [' + socket.id + '] [CHANGE NAME TO \'' + data.name + '\']');
+
+    state[code]["players"][socket.id]["name"] = data.name;
+  })
 
   socket.on('join party', data => {
     var code = data.code.toUpperCase();
@@ -167,8 +167,13 @@ io.on('connection', socket => {
     //moving the game forward as host
     var code = data.code.toUpperCase();
 
+    if (!Object.keys(state).includes(code)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] TRYING TO ALTER STATE OF A NON-EXISTENT PARTY]');
+      return;
+    }
+
     if (!Object.keys(state[code]["players"]).includes(socket.id)){
-      console.log('[' + code + '] [' + socket.id + '] [ERROR] NON PPLAYER CANNOT PROGRESS PARTY STATE]');
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] NON PLAYER CANNOT PROGRESS PARTY STATE]');
       return;
     }
 
@@ -177,7 +182,7 @@ io.on('connection', socket => {
       return;
     }
 
-    console.log('[' + code + '] [' + socket.id + '] [CHARGE PARTY STATE]');
+    console.log('[' + code + '] [' + socket.id + '] [CHANGE PARTY STATE]');
     socket.broadcast
       .to(code)
       .emit("game update", state[code]);
@@ -187,6 +192,11 @@ io.on('connection', socket => {
     var code = data.code;
     var submittedWord = data.word.toUpperCase();
     console.log('[' + code + '] [' + socket.id + '] [SUBMIT WORD \'' + submittedWord + '\']');
+
+    if (!Object.keys(state).includes(code)){
+      console.log('[' + code + '] [' + socket.id + '] [ERROR] TRYING TO SUBMIT WORD TO NON-EXISTENT PARTY]');
+      return;
+    }
     
     if (Object.keys(state[code]["players"]).includes(socket.id)){
       state[code]["players"][socket.id]["answer"] = submittedWord;
