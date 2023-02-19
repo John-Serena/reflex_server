@@ -477,8 +477,8 @@ io.on('connection', (socket) => {
 })
 
 // Initialize server
-server.listen(3001, () => {
-  console.log('Listening on port 3001.')
+server.listen(5000, () => {
+  console.log('Listening on port 5000.')
 })
 
 // Export the Express server
