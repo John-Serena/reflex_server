@@ -5,6 +5,7 @@ const app = express()
 const http = require('http')
 const server = http.createServer(app)
 const state = {}
+const playerGameMap = {}
 const words = ['poodles', 'giraffe', 'turtles', 'trex']
 
 // Helper functions
@@ -43,6 +44,96 @@ function GetWord(previousWords) {
   return word
 }
 
+function TransferHost(code, oldHostId, newHostId, sock) {
+  code = code.toUpperCase();
+
+  if (!Object.keys(state).includes(code)) {
+    console.log(
+      '[' +
+        code +
+        '] [' +
+        oldHostId +
+        '] [ERROR] TRYING TO TRANSFER HOSTS IN A NON-EXISTENT PARTY]',
+    )
+    return
+  }
+
+  if (!Object.keys(state[code]['players']).includes(oldHostId)) {
+    console.log(
+      '[' +
+        code +
+        '] [' +
+        oldHostId +
+        '] [ERROR] TRYING TO TRANSFER HOST WHEN HOST NOT IN PARTY]',
+    )
+    return
+  }
+
+  if (!Object.keys(state[code]['players']).includes(newHostId)) {
+    console.log(
+      '[' +
+        code +
+        '] [' +
+        oldHostId +
+        '] [ERROR] TRYING TO TRANSFER HOST WHEN NEW HOST NOT IN PARTY]',
+    )
+    return
+  }
+
+  state[code]['players'][oldHostId].isHost = false;
+  state[code]['players'][newHostId].isHost = true;
+
+  sock.broadcast.to(code).emit('transfered host', state[code]);
+}
+
+function LeaveGame(code, id, sock) {
+  code = code.toUpperCase();
+
+  if (!Object.keys(state).includes(code)) {
+    console.log(
+      '[' +
+        code +
+        '] [' +
+        id +
+        '] [ERROR] TRYING TO LEAVE A NON-EXISTENT PARTY]',
+    )
+    return
+  }
+
+  if (!Object.keys(state[code]['players']).includes(id)) {
+    console.log(
+      '[' +
+        code +
+        '] [' +
+        id +
+        '] [ERROR] TRYING TO LEAVE GAME WHEN NOT IN PARTY]',
+    )
+    return
+  }
+
+  if (state[code]['players'][id].isHost){
+    //transfer host randomly
+    for (playerId of Object.keys(state[code]['players'])){
+      if (!state[code]['players'][playerId].isHost) {
+        TransferHost(code, id, playerId, sock);
+        break;
+      }
+    }
+  }
+
+  //remove player
+  state[code]['players'].delete(id);
+
+  //conditionally delete game
+  if (Object.keys(state[code]['players']).length == 0){
+    //delete game
+    state.delete(code);
+  } else {
+    //update state
+    sock.broadcast.to(code).emit('player left', state[code])
+  }
+}
+
 const { Server } = require('socket.io')
 const io = new Server(server, {
   cors: {
@@ -72,8 +163,17 @@ app.get('/summary/' + process.env.SECRET, (_, res) => {
 // Configure socket
 io.on('connection', (socket) => {
   socket.on('disconnect', (_) => {
-    console.log('[USER DISCONNECT]')
-    //purge map of IDs
+    console.log('[USER DISCONNECT] [' + socket.id + ']')
+
+    if (!Object.keys(playerGameMap).includes(socket.id)){
+      console.log('[' +
+          socket.id +
+          '] [INFO] YOU HAVE NO FRIENDS]',
+      )
+      return;
+    }
+
+    LeaveGame(playerGameMap[socket.id], socket.id, socket)
   })
 
   socket.on('create party', (data, cb) => {
@@ -110,6 +210,7 @@ io.on('connection', (socket) => {
     party['players'][socket.id] = host
     state[code] = party
     socket.join(code)
+    playerGameMap[socket.id] = code
     cb(party)
   })
 
@@ -129,7 +230,7 @@ io.on('connection', (socket) => {
     cb(isValid)
   })
 
-  socket.on('change name', (data) => {
+  socket.on('change name', (data, cb) => {
     var code = data.code.toUpperCase()
 
     if (!Object.keys(state).includes(code)) {
@@ -159,6 +260,8 @@ io.on('connection', (socket) => {
     )
 
     state[code]['players'][socket.id]['name'] = data.name
+    cb(state[code])
+    socket.broadcast.to(code).emit('changed name', state[code])
   })
 
   socket.on('join party', (data, cb) => {
@@ -207,10 +310,11 @@ io.on('connection', (socket) => {
 
     cb(party)
     socket.join(code)
+    playerGameMap[socket.id] = code
     socket.broadcast.to(code).emit('joined party', state[code])
   })
 
-  socket.on('change party state', (data) => {
+  socket.on('change party state', (data, cb) => {
     //moving the game forward as host
     var code = data.code.toUpperCase()
 
@@ -249,9 +353,10 @@ io.on('connection', (socket) => {
 
     console.log('[' + code + '] [' + socket.id + '] [CHANGE PARTY STATE]')
     socket.broadcast.to(code).emit('game update', state[code])
+    cb(state[code])
   })
 
-  socket.on('submit word', (data) => {
+  socket.on('submit word', (data, cb) => {
     var code = data.code
     var submittedWord = data.word.toUpperCase()
     console.log(
@@ -335,9 +440,39 @@ io.on('connection', (socket) => {
 
       //signal to change to next screen automatically
       socket.broadcast.to(code).emit('change screen', true)
+      cb({
+        "change": true,
+        "state": null
+      })
     }
 
     socket.broadcast.to(code).emit('word submitted', state[code])
+    cb({
+      "change": false,
+      "state": state[code]
+    })
+  })
+
+  socket.on('transfer host', (data, cb) => {
+    var code = data.code.toUpperCase();
+    var newHostId = data.newHostId;
+
+    TransferHost(code, socket.id, newHostId, socket);
+    cb(state[code]);
+  })
+
+  socket.on('leave game', data => {
+    console.log('[LEAVE GAME] [' + socket.id + ']')
+
+    if (!Object.keys(playerGameMap).includes(socket.id)){
+      console.log('[' +
+          socket.id +
+          '] [INFO] YOU HAVE NO FRIENDS]',
+      )
+      return;
+    }
+
+    LeaveGame(playerGameMap[socket.id], socket.id, socket);
   })
 })
 
